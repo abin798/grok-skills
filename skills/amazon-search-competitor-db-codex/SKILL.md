@@ -1,11 +1,11 @@
 ---
 name: amazon-search-competitor-db-codex
-description: 在Codex中按亚马逊美国站搜索词制作前3页自然排名竞品Excel，固定35列，含原生单元格内主图、WPS商品链接、真实更新时间、卖家主体和商标线索。用于明确的竞品表制作请求或该工作流中的搜索词续用。
+description: 在Codex中按亚马逊美国站搜索词制作前3页自然排名竞品Excel，固定32列，含原生单元格内主图、WPS商品链接、真实更新时间和卖家主体。用于明确的竞品表制作请求或该工作流中的搜索词续用。
 ---
 
 # 亚马逊搜索词竞品表（Codex）
 
-以用户原始搜索词生成 `当季热销品竞品数据库--<搜索词><YYYYMMDD>.xlsx`，日期取交付时北京时间，保留搜索词空格；非法路径分隔符安全替换并说明。中文回复。主表「竞品明细」固定35列及顺序，另保留「变体明细」「说明」，不得为标注来源增删主表列。字段见 [references/schema.json](references/schema.json)。这是独立Codex Skill，既有Grok版不属于本目录。未建立该工作流时，不把无关的孤立词语解释为付费调研请求。
+以用户原始搜索词生成 `当季热销品竞品数据库--<搜索词><YYYYMMDD>.xlsx`，日期取交付时北京时间，保留搜索词空格；非法路径分隔符安全替换并说明。中文回复。主表「竞品明细」固定32列及顺序，另保留「变体明细」「说明」，不得为标注来源增删主表列。主表以AF列「卖家主页」结束，不再进行商标查询、补查或商标持有人背景调研。字段见 [references/schema.json](references/schema.json)。这是独立Codex Skill，既有Grok版不属于本目录。未建立该工作流时，不把无关的孤立词语解释为付费调研请求。
 
 ## 采集
 
@@ -23,13 +23,14 @@ python3 <skill>/scripts/collect_amazon.py --keyword '<搜索词>' --work-dir '<�
 
 - 按确切ASIN合并。批量接口可能扩展同父子体并分页，完整读取后精确匹配；额外变体只进副表。BSR采用对应标签或可追溯映射，不取祖先类目代替。
 - X列缺更新时间时继续查详情的真实 `updatedTime`，保存原始UTC毫秒 `_sellersprite_updated_at_ms`，由生成器显示北京时间。禁止查询时刻、createdTime或销量快照时间代填。分钟流控缓存后等待窗口恢复，不当作永久缺失。
-- AA/AB优先Amazon正式公司及地址；页面不可得时，可用按卖家ID精确查询的第三方明确字段，标来源及未直接核实，不把已有资料全部留空。品牌、店铺和商标持有人不能推断为公司；Amazon自营无正式主体/地址证据则留空。
-- AG/AH保留真实同名注册候选、申请人和历史主体，明确注册候选、申请中、失效或多主体未消歧的前缀。类别、编号、状态、国家和完整说明保留在「说明」，不把同名当成属于本商品的确权。无记录或国别冲突可以留空。
+- AA/AB优先Amazon正式公司及地址；页面不可得时，可用按卖家ID精确查询的第三方明确字段，标来源及未直接核实，不把已有资料全部留空。品牌和店铺不能推断为公司；Amazon自营无正式主体/地址证据则留空。
 - `1K+ bought in past month` 仅取下限，保留 `_sales_display` 和 `_sales_lower_bound: true`。第三方估算只有周期/粒度明确匹配才能补主表并标橙。未确认子体粒度的同父units保留副表/证据，不作子体销量、不相加。
 
 ## 输入与生成
 
-JSON记录键采用原始表头，缺失为null。`_image` 为本地PNG/JPEG（相对JSON目录或绝对路径），逐字段来源用 `_sources`，来源性质用 `_field_provenance`，完整商标说明用 `_trademark_details`。第三方公司和商标候选浅黄FFF2CC，估算销量浅橙FCE4D6。事实、状态前缀和来源由agent据证据填，生成器不猜。详细属性见 [references/schema.json](references/schema.json)。
+JSON记录键采用原始表头，缺失为null。`_image` 为本地PNG/JPEG（相对JSON目录或绝对路径），逐字段来源用 `_sources`，来源性质用 `_field_provenance`。第三方公司资料浅黄FFF2CC，估算销量浅橙FCE4D6。事实、状态前缀和来源由agent据证据填，生成器不猜。详细属性见 [references/schema.json](references/schema.json)。
+
+复用旧输入时，移除旧商标字段、来源、详情及相关说明，不将其转移到副表或「说明」页；保留品牌和卖家公司资料。
 
 用目标Codex的Spreadsheets工作流及 `load_workspace_dependencies` 找bundled Node/Python与artifact-tool，再运行：
 
@@ -45,6 +46,6 @@ python3 <skill>/scripts/render_workbook.py <数据.json> --output <交付.xlsx> 
 
 ## 验收与交付
 
-运行 `validate_workbook.py <文件> --input <数据.json>` 核对35列、逐行ASIN/图像、源字节、richData/metadata、D/E/卖家链接、透明热区、F2冻结和筛选。抽查真实更新时间及来源、公式、日期、底色和长文本，查看所有表预览。有目标WPS/Excel时实际打开并点击两个不同ASIN的E图；XML链接存在不等于WPS可点击。透明层随单元格移动/缩放，不同版本排序/筛选行为需实测，未测不声称已测，D链接可核对目标。
+运行 `validate_workbook.py <文件> --input <数据.json>` 核对32列、逐行ASIN/图像、源字节、richData/metadata、D/E/卖家链接、透明热区、F2冻结和筛选。抽查真实更新时间及来源、公式、日期、底色和长文本，查看所有表预览。有目标WPS/Excel时实际打开并点击两个不同ASIN的E图；XML链接存在不等于WPS可点击。透明层随单元格移动/缩放，不同版本排序/筛选行为需实测，未测不声称已测，D链接可核对目标。
 
 交付到当前聊天约定的outputs。简短报告商品数、主要卖家国家、证据支持的头部主体及缺口，区分直接资料与第三方候选。计费只报实证，未返回点数就说明，不把请求次数当费用。删除/改写过时中间说明。真实HTML、图片、API响应和表格留任务目录，不进入公开Skill。

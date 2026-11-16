@@ -132,7 +132,7 @@ def finish_workbook(src, dst, data, schema, allow_missing_images=False):
         auto=ET.Element(Q(MAIN,'autoFilter'))
         data_idx=list(sheet).index(sheet_data)
         sheet.insert(data_idx+1,auto)
-    auto.set('ref',f'A1:AI{max(1,len(data.get("records",[]))+1)}')
+    auto.set('ref',f'A1:AF{max(1,len(data.get("records",[]))+1)}')
     views=sheet.find(Q(MAIN,'sheetViews'))
     if views is None:
         views=ET.Element(Q(MAIN,'sheetViews')); sheet.insert(0,views)

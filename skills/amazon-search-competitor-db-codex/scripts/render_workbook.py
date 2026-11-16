@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the fixed 35-column competitor workbook from collected/enriched JSON."""
+"""Create the fixed 32-column competitor workbook from collected/enriched JSON."""
 from __future__ import annotations
 import argparse
 import json
@@ -13,7 +13,7 @@ import tempfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from in_cell_images import finish_workbook
-from validate_workbook import validate_workbook,expected_date_values,excel_date_serial,excel_datetime_serial,highlighted_fields
+from validate_workbook import validate_workbook,expected_date_values,excel_date_serial,excel_datetime_serial,highlighted_fields,remove_legacy_export_data
 from patch_link_styles import patch_link_styles
 from add_link_overlays import add_image_link_overlays
 
@@ -34,9 +34,10 @@ def prepare_data(input_path,allow_missing_images=False):
     if data.get('marketplace','US')!='US': raise ValueError('This skill currently supports amazon.com US only')
     for field in ['variants','notes']:
         if field in data and not isinstance(data[field],list): raise ValueError(f'{field} must be a list')
+    remove_legacy_export_data(data)
     data.setdefault('notes',[])
     if data.get('sample'):
-        data['notes'].insert(0,'演示数据，仅用于验证格式和功能，不代表真实商品、卖家、销量或商标信息。')
+        data['notes'].insert(0,'演示数据，仅用于验证格式和功能，不代表真实商品、卖家或销量。')
     if data.get('captured_at'):
         captured=datetime.fromisoformat(str(data['captured_at']).replace('Z','+00:00'))
         if captured.tzinfo is None: raise ValueError('captured_at must include a timezone offset')
@@ -106,7 +107,7 @@ def main():
     data=prepare_data(input_path,args.allow_missing_images)
     schema_path=HERE.parent/'references/schema.json'
     schema=json.loads(schema_path.read_text(encoding='utf-8'))
-    if len(schema['headers'])!=35: raise ValueError('Schema must contain exactly 35 columns')
+    if len(schema['headers'])!=32: raise ValueError('Schema must contain exactly 32 columns')
     safe_keyword=re.sub(r'[/\\\x00-\x1f]','_',data['keyword'])
     stamp=datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y%m%d')
     output=(args.output or Path.cwd()/'outputs'/f'当季热销品竞品数据库--{safe_keyword}{stamp}.xlsx').resolve()

@@ -31,10 +31,7 @@
     "主体所在国家/地区",
     "卖家ASIN数量",
     "卖家最佳自然排名",
-    "卖家主页",
-    "商标持有人",
-    "商标持有人国家/地区",
-    "商标信息"
+    "卖家主页"
   ],
   "price_columns": [
     "价格",
@@ -57,9 +54,9 @@
     "marketplace": "US",
     "captured_at": "带时区的 ISO 8601 抓取时间",
     "delivery_postcode": "已核实的页面配送邮编；未核实则留空",
-    "records": "对象列表，键采用headers原始列名。缺失用null；_image为本地PNG/JPEG（相对JSON目录或绝对路径）；_sources逐字段记录来源；_sales_display和_sales_lower_bound保留页面购买量原文及下限，_sales_estimated仅用于粒度匹配的估算；_sellersprite_updated_at_ms为真实updatedTime UTC毫秒；_field_provenance记录公司/商标等来源性质；_trademark_details为完整商标说明；_listing_date_approx为近似日标识。",
+    "records": "对象列表，键采用headers原始列名。缺失用null；_image为本地PNG/JPEG（相对JSON目录或绝对路径）；_sources逐字段记录来源；_sales_display和_sales_lower_bound保留页面购买量原文及下限，_sales_estimated仅用于粒度匹配的估算；_sellersprite_updated_at_ms为真实updatedTime UTC毫秒；_field_provenance记录公司等资料来源性质；_listing_date_approx为近似日标识。",
     "variants": "变体对象列表，表头使用中文，至少包含父ASIN和ASIN",
-    "notes": "说明文字列表，含覆盖缺口、买过人数下限/估算、商标同名消歧、日期近似和不可核实值",
+    "notes": "说明文字列表，含覆盖缺口、买过人数下限/估算、日期近似和不可核实值",
     "points_used": "实际已知的卖家精灵点数；未知为 null，不猜测"
   },
   "record_optional_fields": {
@@ -69,14 +66,9 @@
         "source_type": "third_party_database",
         "source": "按确切卖家ID查询的第三方资料",
         "verified_on_amazon": false
-      },
-      "商标持有人": {
-        "source_type": "third_party_trademark_candidates",
-        "source": "实际同名商标记录，归属商品未核实"
       }
     },
     "_highlight_fields": "兼容既有逐字段颜色对象；优先用来源性质决定第三方浅黄，估算销量浅橙",
-    "_trademark_details": "完整的局、类别、编号、状态、日期、来源和歧义；AI列可只写短状态",
     "_listing_date_approx": "使用近似上架日时true，并明确局限"
   },
   "date_storage": {

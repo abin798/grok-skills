@@ -2,6 +2,7 @@
 """Validate the fixed schema, typed dates, native images, links and WPS click layer."""
 from __future__ import annotations
 import argparse
+import copy
 from datetime import date,datetime,timedelta,timezone
 import json
 import math
@@ -17,6 +18,34 @@ BEIJING=timezone(timedelta(hours=8))
 EPOCH=date(1899,12,30)
 HOTSPOT_PREFIX='CodexASINHotspot_'
 COMPANY_FIELDS={'公司主体','公司地址','主体所在国家/地区'}
+
+def removed_legacy_field(value):
+    if not isinstance(value,str): return False
+    return ('商标' in value or 'trademark' in value.casefold() or
+            re.fullmatch(r'\$?(?:AG|AH|AI)\$?\d*',value.strip(),re.I) is not None)
+
+def legacy_note(value):
+    text=value if isinstance(value,str) else json.dumps(value,ensure_ascii=False)
+    return re.search(r'商标|trademark|\bUSPTO\b|\bTSDR\b',text,re.I) is not None
+
+def remove_legacy_export_data(data):
+    """Discard retired result fields/caches; ordinary brand/company facts stay."""
+    for key in list(data):
+        if removed_legacy_field(key): data.pop(key,None)
+    for row in [*data.get('records',[]),*data.get('variants',[])]:
+        if not isinstance(row,dict): continue
+        for key in list(row):
+            if removed_legacy_field(key): row.pop(key,None)
+        for field in ['_sources','_field_provenance']:
+            mapping=row.get(field)
+            if isinstance(mapping,dict): row[field]={key:value for key,value in mapping.items() if not removed_legacy_field(key) and not (isinstance(value,dict) and value.get('source_type')=='third_party_trademark_candidates')}
+        for field in ['_highlight_fields','_highlight_fields_resolved']:
+            value=row.get(field)
+            if isinstance(value,dict): row[field]={key:color for key,color in value.items() if not removed_legacy_field(key)}
+            elif isinstance(value,list): row[field]=[key for key in value if not removed_legacy_field(key)]
+            elif removed_legacy_field(value): row.pop(field,None)
+    if isinstance(data.get('notes'),list): data['notes']=[note for note in data['notes'] if not legacy_note(note)]
+    return data
 
 def excel_date_serial(value):
     """Calendar date: YYYY-MM-DD, aware ISO, or Unix milliseconds -> integer."""
@@ -60,8 +89,8 @@ def highlighted_fields(record,headers):
     result=set()
     for field,provenance in (record.get('_field_provenance') or {}).items():
         if not isinstance(provenance,dict): continue
-        third=provenance.get('source_type') in {'third_party_database','third_party_trademark_candidates'}
-        if field in headers and third and provenance.get('verified_on_amazon') is not True and (field in COMPANY_FIELDS or field.startswith('商标')): result.add(field)
+        third=provenance.get('source_type')=='third_party_database'
+        if field in headers and third and provenance.get('verified_on_amazon') is not True and field in COMPANY_FIELDS: result.add(field)
     old=record.get('_highlight_fields') or []
     if isinstance(old,dict): old=[key for key,value in old.items() if value is not False and value is not None]
     if isinstance(old,str): old=[old]
@@ -87,7 +116,9 @@ def column_letter(number):
     return result
 
 def validate_workbook(path,data=None,schema=None,require_click_layer=True,require_asin_text_links=True):
+    if data is not None: data=remove_legacy_export_data(copy.deepcopy(data))
     if schema is None: schema=json.loads((Path(__file__).resolve().parent.parent/'references/schema.json').read_text(encoding='utf-8'))
+    if len(schema['headers'])!=32: raise ValueError('Schema must contain exactly 32 columns')
     with zipfile.ZipFile(path) as archive:
         if archive.testzip(): raise ValueError('ZIP CRC check failed')
         files={name:archive.read(name) for name in archive.namelist()}
@@ -99,8 +130,12 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
     part=sheet_part(files,'竞品明细')
     sheet=ET.fromstring(files[part])
     cells={c.get('r'):c for row in sheet.find(Q(MAIN,'sheetData')) for c in row}
-    headers=[cell_text(cells.get(column_letter(i)+'1'),shared) for i in range(1,36)]
-    if headers!=schema['headers']: raise ValueError('35-column header/order mismatch')
+    headers=[cell_text(cells.get(column_letter(i)+'1'),shared) for i in range(1,33)]
+    if headers!=schema['headers']: raise ValueError('32-column header/order mismatch')
+    for ref in cells:
+        letters=re.match(r'[A-Z]+',ref).group(); number=0
+        for letter in letters: number=number*26+ord(letter)-64
+        if number>32: raise ValueError('Main worksheet contains retired columns after AF')
     pane=sheet.find('./'+Q(MAIN,'sheetViews')+'/'+Q(MAIN,'sheetView')+'/'+Q(MAIN,'pane'))
     if pane is None or pane.get('topLeftCell')!='F2' or pane.get('xSplit')!='5' or pane.get('ySplit')!='1': raise ValueError('Freeze pane must be F2')
     if sheet.find(Q(MAIN,'autoFilter')) is None: raise ValueError('Worksheet autoFilter missing')
@@ -114,6 +149,7 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
         if relation.get('Type')!=REL+'/hyperlink' or relation.get('TargetMode')!='External': raise ValueError('Invalid hyperlink relationship')
         linkmap[h.get('ref')]=relation.get('Target')
     asins={int(ref[1:]):cell_text(cell,shared) for ref,cell in cells.items() if re.fullmatch(r'D\d+',ref) and int(ref[1:])>=2 and cell_text(cell,shared)}
+    if sheet.find(Q(MAIN,'autoFilter')).get('ref')!=f'A1:AF{max(1,len(asins)+1)}': raise ValueError('Main autofilter must end at AF and the actual data row')
     if any(not re.fullmatch(r'[A-Z0-9]{10}',str(a)) for a in asins.values()): raise ValueError('Invalid main ASIN value')
     image_cells={ref:c for ref,c in cells.items() if c.get('vm')}
     for ref,c in cells.items():
@@ -219,7 +255,7 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
             if asins.get(row)!=record['ASIN']: raise ValueError(f'ASIN mismatch at D{row}')
             if cells[f'D{row}'].get('t') not in {'s','inlineStr','str'}: raise ValueError('ASIN must remain text')
             dates=expected_date_values(record); check_date_cell(f'L{row}',dates['上架时间'],True); check_date_cell(f'X{row}',dates['卖家精灵数据更新时间'])
-            for field in ['标题','公司主体','公司地址','商标信息']:
+            for field in ['标题','公司主体','公司地址']:
                 original=record.get(field)
                 if original is not None and isinstance(original,str):
                     actual=cell_text(cells.get(f'{column_letter(headers.index(field)+1)}{row}'),shared)
@@ -231,12 +267,6 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
             if record.get('卖家主页') and linkmap.get(f'AF{row}')!=record['卖家主页']: raise ValueError('Seller hyperlink mismatch')
         expected_links=expected_count*(2 if require_asin_text_links else 1)+sum(bool(r.get('卖家主页')) for r in records)
         if len(hyperlinks)!=expected_links: raise ValueError('Cell hyperlink count mismatch')
-        note_text='\n'.join(cell_text(c,shared) or '' for c in ET.fromstring(files[sheet_part(files,'说明')]).iter(Q(MAIN,'c')))
-        for record in records:
-            details=record.get('_trademark_details')
-            if details:
-                for offset in range(0,len(details),1000):
-                    if details[offset:offset+1000] not in note_text: raise ValueError('Full trademark details missing from notes')
         variant_sheet=ET.fromstring(files[sheet_part(files,'变体明细')])
         variant_cells={c.get('r'):c for c in variant_sheet.iter(Q(MAIN,'c'))}
         variants=data.get('variants',[])
@@ -252,7 +282,7 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
                     expected=record[field]
                     if re.match(r'^[=+@]',expected): expected="'"+expected
                     if cell_text(variant_cells.get(ref),shared)!=expected: raise ValueError(f'Variant text changed/truncated at {ref}')
-    return {'passed':True,'columns':35,'image_cells':len(image_cells),'click_overlays':len(overlays),'hyperlinks':len(hyperlinks),'source_image_bytes_verified':verified_image_bytes,'xml_parts':sum(n.endswith(('.xml','.rels')) for n in files),'native_application_visual_check':False,'native_sort_filter_check':False}
+    return {'passed':True,'columns':32,'image_cells':len(image_cells),'click_overlays':len(overlays),'hyperlinks':len(hyperlinks),'source_image_bytes_verified':verified_image_bytes,'xml_parts':sum(n.endswith(('.xml','.rels')) for n in files),'native_application_visual_check':False,'native_sort_filter_check':False}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__); parser.add_argument('workbook',type=Path); parser.add_argument('--input',type=Path)

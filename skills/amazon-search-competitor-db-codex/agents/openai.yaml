@@ -1,6 +1,6 @@
 interface:
   display_name: "亚马逊竞品表（Codex）"
-  short_description: "生成固定35列竞品表，含单元格内主图、WPS商品链接和来源明确的卖家资料"
-  default_prompt: "使用 $amazon-search-competitor-db-codex，按我提供的美国站搜索词生成带单元格内主图的35列竞品Excel。"
+  short_description: "生成固定32列竞品表，含单元格内主图、WPS商品链接和来源明确的卖家资料"
+  default_prompt: "使用 $amazon-search-competitor-db-codex，按我提供的美国站搜索词生成带单元格内主图的32列竞品Excel。"
 policy:
   allow_implicit_invocation: true

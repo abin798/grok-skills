@@ -412,7 +412,7 @@ def collect(args):
         if detail_count < len(result["records"]):
             result["notes"].append(f"商品详情补充覆盖{detail_count}/{len(result['records'])}；缺失字段留空，需后续补充。")
     else:
-        result["notes"].append("本次采集仅含搜索页已展示字段；详情、变体、卖家主体和商标信息待后续补充。")
+        result["notes"].append("本次采集仅含搜索页已展示字段；详情、变体和卖家主体待后续补充。")
     result["details_collected"] = detail_count
     result["details_complete"] = args.details and detail_count == len(result["records"])
     image_failures = []
@@ -426,7 +426,7 @@ def collect(args):
     result["enrichment_complete"] = False
     if any("_sales_display" in record for record in result["records"]):
         result["notes"].append("近一月销量中的Amazon bought in past month为页面购买量展示；带+的数值仅为下限，原始文本保留在各商品_sales_display中，不能视为精确销量。")
-    result["notes"].append("本助手没有调用卖家精灵，点数使用为0；品牌/上架时间/父ASIN/销量估算、公司主体地址及商标归属须按Skill继续补证据。")
+    result["notes"].append("本助手没有调用卖家精灵，点数使用为0；品牌/上架时间/父ASIN/销量估算、公司主体地址须按Skill继续补证据。")
     output = work / "competitors.json"
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(output), "status": result["status"], "search_coverage_complete": result["search_coverage_complete"], "products": len(result["records"]), "images": len(result["records"]) - len(image_failures)}, ensure_ascii=False))

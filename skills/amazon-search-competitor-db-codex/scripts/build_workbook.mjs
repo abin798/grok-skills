@@ -29,9 +29,9 @@ const values = rows.map((record,i) => headers.map(header => {
   if (integerColumns.has(header) && value!==null && (!Number.isInteger(value)||value<0)) throw new Error(`${record.ASIN}: ${header} must be a nonnegative integer`);
   return literal(value);
 }));
-detail.getRange('A1:AI1').values=[headers];
-if (values.length) detail.getRange(`A2:AI${values.length+1}`).values=values;
-const used=detail.getRange(`A1:AI${Math.max(1,rows.length+1)}`);
+detail.getRange('A1:AF1').values=[headers];
+if (values.length) detail.getRange(`A2:AF${values.length+1}`).values=values;
+const used=detail.getRange(`A1:AF${Math.max(1,rows.length+1)}`);
 used.format.font={name:'Arial',size:10,color:'#202938'};
 used.format.verticalAlignment='center';
 used.format.columnWidth=16;
@@ -39,7 +39,7 @@ used.format.rowHeight=76;
 used.format.wrapText=true;
 detail.showGridLines=false;
 detail.tabColor='#203A58';
-const headerRange=detail.getRange('A1:AI1');
+const headerRange=detail.getRange('A1:AF1');
 headerRange.format={fill:'#203A58',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'},rowHeight:38,wrapText:true,horizontalAlignment:'center',verticalAlignment:'center'};
 detail.getRange(`A2:C${Math.max(2,rows.length+1)}`).format.columnWidth=9;
 detail.getRange(`D1:D${Math.max(1,rows.length+1)}`).format.columnWidth=15;
@@ -50,8 +50,8 @@ detail.getRange(`F1:F${Math.max(1,rows.length+1)}`).format.columnWidth=54;
 detail.getRange(`F2:G${Math.max(2,rows.length+1)}`).format.wrapText=true;
 detail.getRange(`AA1:AB${Math.max(1,rows.length+1)}`).format.columnWidth=36;
 detail.getRange(`AA2:AB${Math.max(2,rows.length+1)}`).format.wrapText=true;
-detail.getRange(`AF1:AI${Math.max(1,rows.length+1)}`).format.columnWidth=30;
-detail.getRange(`AF2:AI${Math.max(2,rows.length+1)}`).format.wrapText=true;
+detail.getRange(`AF1:AF${Math.max(1,rows.length+1)}`).format.columnWidth=30;
+detail.getRange(`AF2:AF${Math.max(2,rows.length+1)}`).format.wrapText=true;
 for (let i=0;i<headers.length;i++) {
   const h=headers[i], end=Math.max(2,rows.length+1), r=detail.getRange(`${col(i+1)}2:${col(i+1)}${end}`);
   if(integerColumns.has(h)) r.setNumberFormat('0');
@@ -72,8 +72,8 @@ for(let i=0;i<rows.length;i++) {
     if(index>=0) detail.getRange(`${col(index+1)}${row}`).format.fill='#FFF2CC';
   }
   if(r._sales_estimated) detail.getRange(`K${row}`).format.fill='#FCE4D6';
-  const longest=Math.max(76,...[['标题',54],['品牌',16],['公司主体',36],['公司地址',36],['商标持有人',30],['商标信息',30]].map(([field,width])=>lineHeight(r[field],width)));
-  detail.getRange(`A${row}:AI${row}`).format.rowHeight=Math.min(409.5,longest);
+  const longest=Math.max(76,...[['标题',54],['品牌',16],['公司主体',36],['公司地址',36]].map(([field,width])=>lineHeight(r[field],width)));
+  detail.getRange(`A${row}:AF${row}`).format.rowHeight=Math.min(409.5,longest);
 }
 detail.freezePanes.freezeRows(1);
 detail.freezePanes.freezeColumns(5);
@@ -105,7 +105,7 @@ const notesRows=[
  ['近一月销量口径','页面 bought in past month 的数字可能是下限，原文保存在来源说明；第三方估算填浅橙底。',''],
  ['上架时间口径','历史最早记录只作近似，不等同于真实上架时间；近似项逐条注明。',''],
  ['卖家精灵点数',data.points_used??'未核实',''],
- ['来源颜色','浅黄表示第三方公司资料或商标候选；浅橙表示估算销量。来源和核实状态逐字段列示。',''],
+ ['来源颜色','浅黄表示第三方公司资料；浅橙表示估算销量。来源和核实状态逐字段列示。',''],
  ['更新时间口径','只取真实源更新时间，按北京时间显示至分钟；数值保留原时间精度，不用本次查询时间代填。',''],
 ];
 const appendLong=(asin,label,value)=>{
@@ -115,7 +115,7 @@ const appendLong=(asin,label,value)=>{
 };
 for(const note of data.notes??[]) appendLong('说明','',String(note));
 notesRows.push(['字段来源','',''],['ASIN','字段','来源及完整说明']);
-const sourceLabels={amazon_direct:'Amazon直接披露',third_party_database:'第三方数据库',third_party_trademark_candidates:'第三方商标候选，待核实'};
+const sourceLabels={amazon_direct:'Amazon直接披露',third_party_database:'第三方数据库'};
 for(const record of rows) {
   for(const [field,source] of Object.entries(record._sources??{})) appendLong(record.ASIN,field,source);
   for(const [field,meta] of Object.entries(record._field_provenance??{})) {
@@ -126,8 +126,7 @@ for(const record of rows) {
   if(record._listing_date_approx) appendLong(record.ASIN,'上架时间','近似：使用历史最早记录，不是确证上架日期。');
   if(record._sellersprite_updated_at_ms!==null&&record._sellersprite_updated_at_ms!==undefined) appendLong(record.ASIN,'更新时间原始毫秒',String(record._sellersprite_updated_at_ms));
   else if(record['卖家精灵数据更新时间']) appendLong(record.ASIN,'更新时间原始值',String(record['卖家精灵数据更新时间']));
-  if(record._trademark_details) appendLong(record.ASIN,'完整商标资料',record._trademark_details);
-  for(const field of ['标题','公司主体','公司地址','商标信息']) if(typeof record[field]==='string'&&Array.from(record[field]).length>160) appendLong(record.ASIN,`${field}完整内容`,record[field]);
+  for(const field of ['标题','公司主体','公司地址']) if(typeof record[field]==='string'&&Array.from(record[field]).length>160) appendLong(record.ASIN,`${field}完整内容`,record[field]);
 }
 for(const record of variantRows) {
   for(const [field,value] of Object.entries(record)) if(!field.startsWith('_')&&typeof value==='string'&&Array.from(value).length>120) appendLong(record.ASIN??record['父ASIN']??'变体',`变体${field}完整内容`,value);
@@ -162,7 +161,7 @@ if(previewDir) {
     detail.getRange(`E${i+2}`).values=[[null]];
     detail.images.add({dataUrl:`data:${mime};base64,${bytes.toString('base64')}`,anchor:{from:{row:i+1,col:4,rowOffsetPx:3,colOffsetPx:3},extent:{widthPx:104,heightPx:92}}});
   }
-  for(const [sheetName,range,name] of [['竞品明细',`A1:M${Math.min(5,rows.length+1)}`,'竞品明细'],['竞品明细',`N1:AI${Math.min(5,rows.length+1)}`,'竞品明细右侧'],['变体明细',`A1:${col(Math.min(variantHeaders.length,6))}${Math.min(5,variantRows.length+1)}`,'变体明细'],['说明',`A1:C${Math.min(13,notesRows.length)}`,'说明']]) {
+  for(const [sheetName,range,name] of [['竞品明细',`A1:M${Math.min(5,rows.length+1)}`,'竞品明细'],['竞品明细',`N1:AF${Math.min(5,rows.length+1)}`,'竞品明细右侧'],['变体明细',`A1:${col(Math.min(variantHeaders.length,6))}${Math.min(5,variantRows.length+1)}`,'变体明细'],['说明',`A1:C${Math.min(13,notesRows.length)}`,'说明']]) {
     const blob=await wb.render({sheetName,range,scale:1,format:'png'});
     await fs.writeFile(path.join(previewDir,`${name}.png`),new Uint8Array(await blob.arrayBuffer()));
   }
