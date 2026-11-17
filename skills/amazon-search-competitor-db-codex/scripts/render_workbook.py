@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the fixed 32-column competitor workbook from collected/enriched JSON."""
+"""Create the fixed 33-column competitor workbook from collected/enriched JSON."""
 from __future__ import annotations
 import argparse
 import json
@@ -13,7 +13,7 @@ import tempfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from in_cell_images import finish_workbook
-from validate_workbook import validate_workbook,expected_date_values,excel_date_serial,excel_datetime_serial,highlighted_fields,remove_legacy_export_data
+from validate_workbook import validate_workbook,expected_date_values,excel_date_serial,excel_beijing_date_serial,highlighted_fields,remove_legacy_export_data,normalize_fba_fee,normalize_package_size,normalize_package_weight
 from patch_link_styles import patch_link_styles
 from add_link_overlays import add_image_link_overlays
 
@@ -68,6 +68,10 @@ def prepare_data(input_path,allow_missing_images=False):
                     if source not in old: sources[field]=old+'；'+source
                 else: sources[field]=source
         # These values are calculated only from source fields, never from captured_at/current time.
+        record['FBA配送费']=normalize_fba_fee(record.get('FBA配送费'))
+        record['包装尺寸(cm)']=normalize_package_size(record.get('包装尺寸(cm)'))
+        record['包装重量(g)']=normalize_package_weight(record.get('包装重量(g)'))
+        if record.get('库存状态')=='无购买框': record['价格']=None
         record['_excel_date_values']=expected_date_values(record)
         record['_highlight_fields_resolved']=sorted(highlighted_fields(record,schema_headers))
         image=record.get('_image')
@@ -91,7 +95,7 @@ def prepare_data(input_path,allow_missing_images=False):
     for variant in data.get('variants',[]):
         if not isinstance(variant,dict): raise ValueError('Each variant must be an object')
         serials={field:excel_date_serial(variant.get(field)) for field in date_fields if field in variant}
-        serials.update({field:excel_datetime_serial(variant.get(field)) for field in datetime_fields if field in variant})
+        serials.update({field:excel_beijing_date_serial(variant.get(field)) for field in datetime_fields if field in variant})
         variant['_excel_date_values']=serials
     return data
 
@@ -107,7 +111,7 @@ def main():
     data=prepare_data(input_path,args.allow_missing_images)
     schema_path=HERE.parent/'references/schema.json'
     schema=json.loads(schema_path.read_text(encoding='utf-8'))
-    if len(schema['headers'])!=32: raise ValueError('Schema must contain exactly 32 columns')
+    if len(schema['headers'])!=33: raise ValueError('Schema must contain exactly 33 columns')
     safe_keyword=re.sub(r'[/\\\x00-\x1f]','_',data['keyword'])
     stamp=datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y%m%d')
     output=(args.output or Path.cwd()/'outputs'/f'当季热销品竞品数据库--{safe_keyword}{stamp}.xlsx').resolve()

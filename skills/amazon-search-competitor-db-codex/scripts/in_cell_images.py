@@ -69,6 +69,41 @@ def add_relationship(root, typ, target, external=False):
     ET.SubElement(root,Q(PKG,'Relationship'),attr)
     return rid
 
+def set_exact_column_width(sheet, index, width):
+    cols=sheet.find(Q(MAIN,'cols'))
+    if cols is None:
+        cols=ET.Element(Q(MAIN,'cols'))
+        data_element=sheet.find(Q(MAIN,'sheetData'))
+        sheet.insert(list(sheet).index(data_element), cols)
+    rebuilt=[]
+    found=False
+    for col in list(cols):
+        start,end=int(col.get('min')),int(col.get('max'))
+        if end<index or start>index:
+            rebuilt.append(col)
+            continue
+        found=True
+        def piece(left,right,value):
+            element=ET.Element(Q(MAIN,'col'))
+            for key,attr in col.attrib.items():
+                if key not in {'min','max','width'}: element.set(key,attr)
+            element.set('min',str(left)); element.set('max',str(right)); element.set('width',value); element.set('customWidth','1')
+            return element
+        original=col.get('width','8.43')
+        if start<index: rebuilt.append(piece(start,index-1,original))
+        rebuilt.append(piece(index,index,str(width)))
+        if end>index: rebuilt.append(piece(index+1,end,original))
+    if not found:
+        rebuilt.append(ET.Element(Q(MAIN,'col'),{'min':str(index),'max':str(index),'width':str(width),'customWidth':'1'}))
+    rebuilt.sort(key=lambda element:int(element.get('min')))
+    for child in list(cols): cols.remove(child)
+    for child in rebuilt: cols.append(child)
+
+def rewrite_filter_defined_name(raw, last_column):
+    text=raw.decode()
+    updated=re.sub(r"('竞品明细'!\$A\$1:\$)[A-Z]+(\$\d+)", lambda match: match.group(1)+last_column+match.group(2), text)
+    return updated.encode()
+
 def finish_workbook(src, dst, data, schema, allow_missing_images=False):
     with zipfile.ZipFile(src) as z:
         files={name:z.read(name) for name in z.namelist()}
@@ -132,7 +167,8 @@ def finish_workbook(src, dst, data, schema, allow_missing_images=False):
         auto=ET.Element(Q(MAIN,'autoFilter'))
         data_idx=list(sheet).index(sheet_data)
         sheet.insert(data_idx+1,auto)
-    auto.set('ref',f'A1:AF{max(1,len(data.get("records",[]))+1)}')
+    last_column=column_letter(len(headers))
+    auto.set('ref',f'A1:{last_column}{max(1,len(data.get("records",[]))+1)}')
     views=sheet.find(Q(MAIN,'sheetViews'))
     if views is None:
         views=ET.Element(Q(MAIN,'sheetViews')); sheet.insert(0,views)
@@ -142,6 +178,19 @@ def finish_workbook(src, dst, data, schema, allow_missing_images=False):
         if e.tag in {Q(MAIN,'pane'),Q(MAIN,'selection')}: view.remove(e)
     view.insert(0,ET.Element(Q(MAIN,'pane'),{'xSplit':'5','ySplit':'1','topLeftCell':'F2','activePane':'bottomRight','state':'frozen'}))
     ET.SubElement(view,Q(MAIN,'selection'),{'pane':'bottomRight','activeCell':'F2','sqref':'F2'})
+    header_row=rows_by_num.get(1)
+    if header_row is not None:
+        header_row.set('ht','40')
+        header_row.set('customHeight','1')
+    for name in ('上架时间','卖家精灵数据更新时间'):
+        letter=column_letter(headers.index(name)+1)
+        set_exact_column_width(sheet, headers.index(name)+1, 12)
+        for cell in sheet.iter(Q(MAIN,'c')):
+            ref=cell.get('r') or ''
+            if re.fullmatch(letter+r'\d+',ref) and int(ref[len(letter):])>=2:
+                value=cell.findtext(Q(MAIN,'v'))
+                if value and cell.get('t') in {None,'n'} and re.fullmatch(r'-?\d+(?:\.\d+)?',value):
+                    cell.set('t','n')
     files[part]=xml_bytes(sheet,original)
     if len(rels): files[rpath]=xml_bytes(rels)
     if images:
@@ -197,6 +246,8 @@ def finish_workbook(src, dst, data, schema, allow_missing_images=False):
             ET.SubElement(ET.SubElement(value,Q(MAIN,'bk')),Q(MAIN,'rc'),{'t':'1','v':str(i)})
         files['xl/metadata.xml']=xml_bytes(metadata)
         files['[Content_Types].xml']=xml_bytes(ct)
+    if 'xl/workbook.xml' in files:
+        files['xl/workbook.xml']=rewrite_filter_defined_name(files['xl/workbook.xml'], column_letter(len(schema['headers'])))
     dst=Path(dst); dst.parent.mkdir(parents=True,exist_ok=True)
     fd,temp=tempfile.mkstemp(suffix='.xlsx',prefix='.competitor-',dir=dst.parent)
     os.close(fd)

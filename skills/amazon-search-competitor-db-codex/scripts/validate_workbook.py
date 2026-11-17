@@ -80,10 +80,49 @@ def excel_datetime_serial(value):
     fraction=(local.hour*3600+local.minute*60+local.second+local.microsecond/1e6)/86400
     return (local.date()-EPOCH).days+fraction
 
+def excel_beijing_date_serial(value):
+    """Beijing calendar date as an Excel integer. The time of day is discarded."""
+    serial=excel_datetime_serial(value)
+    if serial is None: return None
+    return int(math.floor(serial+1e-9))
+
+def _finite_nonnegative(value):
+    if value is None or value=='' or isinstance(value,bool): return None
+    try: number=float(value)
+    except (TypeError,ValueError): return None
+    if not math.isfinite(number) or number<0: return None
+    return number
+
+def normalize_fba_fee(value):
+    """Sorftime fba_fee in USD, unchanged. Missing or invalid stays null."""
+    return _finite_nonnegative(value)
+
+def normalize_package_weight(value):
+    """Sorftime grams, integer part only. Missing or invalid stays null."""
+    number=_finite_nonnegative(value)
+    return None if number is None else int(number)
+
+def normalize_package_size(value):
+    """Sorftime centimeters as 「长 × 宽 × 高」. Missing stays null; units are not converted."""
+    if value is None or value=='': return None
+    if isinstance(value,(list,tuple)):
+        parts=[]
+        for item in value:
+            if item is None or str(item).strip()=='': return None
+            parts.append(str(item).strip())
+        return ' × '.join(parts) if parts else None
+    text=str(value).strip()
+    if not text: return None
+    if '×' in text: return re.sub(r'\s*×\s*',' × ',text)
+    pieces=re.split(r'\s*[xX*]\s*|,\s*',text)
+    if len(pieces)>=2 and all(re.fullmatch(r'\d+(?:\.\d+)?',piece) for piece in pieces):
+        return ' × '.join(pieces)
+    return text
+
 def expected_date_values(record):
     updated=record.get('_sellersprite_updated_at_ms')
     if updated is None or updated=='': updated=record.get('卖家精灵数据更新时间')
-    return {'上架时间':excel_date_serial(record.get('上架时间')),'卖家精灵数据更新时间':excel_datetime_serial(updated)}
+    return {'上架时间':excel_date_serial(record.get('上架时间')),'卖家精灵数据更新时间':excel_beijing_date_serial(updated)}
 
 def highlighted_fields(record,headers):
     result=set()
@@ -118,7 +157,7 @@ def column_letter(number):
 def validate_workbook(path,data=None,schema=None,require_click_layer=True,require_asin_text_links=True):
     if data is not None: data=remove_legacy_export_data(copy.deepcopy(data))
     if schema is None: schema=json.loads((Path(__file__).resolve().parent.parent/'references/schema.json').read_text(encoding='utf-8'))
-    if len(schema['headers'])!=32: raise ValueError('Schema must contain exactly 32 columns')
+    if len(schema['headers'])!=33: raise ValueError('Schema must contain exactly 33 columns')
     with zipfile.ZipFile(path) as archive:
         if archive.testzip(): raise ValueError('ZIP CRC check failed')
         files={name:archive.read(name) for name in archive.namelist()}
@@ -130,12 +169,16 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
     part=sheet_part(files,'竞品明细')
     sheet=ET.fromstring(files[part])
     cells={c.get('r'):c for row in sheet.find(Q(MAIN,'sheetData')) for c in row}
-    headers=[cell_text(cells.get(column_letter(i)+'1'),shared) for i in range(1,33)]
-    if headers!=schema['headers']: raise ValueError('32-column header/order mismatch')
+    banned={'原价/参考价','折扣','商标持有人','商标持有人国家/地区','商标信息'}
+    if banned.intersection(schema['headers']): raise ValueError('Schema still contains list-price, discount, or trademark columns')
+    headers=[cell_text(cells.get(column_letter(i)+'1'),shared) for i in range(1,34)]
+    if headers!=schema['headers']: raise ValueError('33-column header/order mismatch')
+    if banned.intersection(headers): raise ValueError('Main worksheet still contains list-price, discount, or trademark columns')
+    last_column=column_letter(len(headers))
     for ref in cells:
         letters=re.match(r'[A-Z]+',ref).group(); number=0
         for letter in letters: number=number*26+ord(letter)-64
-        if number>32: raise ValueError('Main worksheet contains retired columns after AF')
+        if number>33: raise ValueError('Main worksheet contains columns after AG')
     pane=sheet.find('./'+Q(MAIN,'sheetViews')+'/'+Q(MAIN,'sheetView')+'/'+Q(MAIN,'pane'))
     if pane is None or pane.get('topLeftCell')!='F2' or pane.get('xSplit')!='5' or pane.get('ySplit')!='1': raise ValueError('Freeze pane must be F2')
     if sheet.find(Q(MAIN,'autoFilter')) is None: raise ValueError('Worksheet autoFilter missing')
@@ -149,14 +192,29 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
         if relation.get('Type')!=REL+'/hyperlink' or relation.get('TargetMode')!='External': raise ValueError('Invalid hyperlink relationship')
         linkmap[h.get('ref')]=relation.get('Target')
     asins={int(ref[1:]):cell_text(cell,shared) for ref,cell in cells.items() if re.fullmatch(r'D\d+',ref) and int(ref[1:])>=2 and cell_text(cell,shared)}
-    if sheet.find(Q(MAIN,'autoFilter')).get('ref')!=f'A1:AF{max(1,len(asins)+1)}': raise ValueError('Main autofilter must end at AF and the actual data row')
+    if sheet.find(Q(MAIN,'autoFilter')).get('ref')!=f'A1:{last_column}{max(1,len(asins)+1)}': raise ValueError('Main autofilter must end at AG and the actual data row')
     if any(not re.fullmatch(r'[A-Z0-9]{10}',str(a)) for a in asins.values()): raise ValueError('Invalid main ASIN value')
     image_cells={ref:c for ref,c in cells.items() if c.get('vm')}
     for ref,c in cells.items():
         if c.get('t')=='e' and not c.get('vm'): raise ValueError(f'Unexpected Excel error at {ref}')
     styles=ET.fromstring(files['xl/styles.xml']); xfs=styles.find(Q(MAIN,'cellXfs')); fills=styles.find(Q(MAIN,'fills'))
     formats={int(x.get('numFmtId')):x.get('formatCode') for x in styles.find(Q(MAIN,'numFmts'))} if styles.find(Q(MAIN,'numFmts')) is not None else {}
-    def format_code(cell): return formats.get(int(xfs[int(cell.get('s','0'))].get('numFmtId','0')),'').replace('"','').replace('\\','')
+    builtin_formats={1:'0',2:'0.00',3:'#,##0',4:'#,##0.00',9:'0%',10:'0.00%',49:'@'}
+    def format_code(cell):
+        fmt_id=int(xfs[int(cell.get('s','0'))].get('numFmtId','0'))
+        return (formats.get(fmt_id) or builtin_formats.get(fmt_id) or '').replace('"','').replace('\\','').split(';')[0]
+    header_row=next(row for row in sheet.find(Q(MAIN,'sheetData')) if row.get('r')=='1')
+    if abs(float(header_row.get('ht','0'))-40)>0.05: raise ValueError('Header row height must be 40')
+    header_alignment=xfs[int(cells['A1'].get('s','0'))].find(Q(MAIN,'alignment'))
+    if header_alignment is None or header_alignment.get('wrapText') not in {'1','true'}: raise ValueError('Header row must wrap text')
+    def column_width(index):
+        cols=sheet.find(Q(MAIN,'cols'))
+        if cols is None: return None
+        for col in cols:
+            if int(col.get('min'))<=index<=int(col.get('max')): return float(col.get('width'))
+        return None
+    for name in ('上架时间','卖家精灵数据更新时间'):
+        if abs((column_width(headers.index(name)+1) or 0)-12)>0.05: raise ValueError(f'{name} column width must be 12')
     def fill_color(cell):
         fill=fills[int(xfs[int(cell.get('s','0'))].get('fillId','0'))]
         color=fill.find('.//'+Q(MAIN,'fgColor'))
@@ -166,19 +224,39 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
         if expected is None:
             if actual is not None and actual!='': raise ValueError(f'Unexpected substituted date/time at {ref}')
             return
-        if cell is None or cell.get('t')!='n': raise ValueError(f'{ref} must be numeric Excel date/time (t=n)')
+        if cell is None or cell.get('t') not in {None,'n'}: raise ValueError(f'{ref} must be numeric Excel date/time (t=n)')
         actual=float(actual)
         if abs(actual-expected)>1e-8 or (date_only and not actual.is_integer()): raise ValueError(f'Date/time mismatch at {ref}')
-        expected_format='yyyy年mm月dd日' if date_only else 'yyyy-mm-dd hh:mm'
+        expected_format='yyyy-mm-dd' if date_only else 'yyyy-mm-dd hh:mm'
         if format_code(cell)!=expected_format: raise ValueError(f'Wrong date/time format at {ref}: {format_code(cell)}')
-    # Even without source JSON, reject ISO-string dates that WPS displays as text.
+    date_columns={column_letter(headers.index(name)+1) for name in ('上架时间','卖家精灵数据更新时间')}
+    # Even without source JSON, reject ISO-string dates and any time component.
     for row in asins:
-        for column,date_only in [('L',True),('X',False)]:
+        for column in date_columns:
             ref=f'{column}{row}'; cell=cells.get(ref)
             raw=cell.findtext(Q(MAIN,'v')) if cell is not None else None
             if raw is not None and raw!='':
-                if cell.get('t')!='n': raise ValueError(f'{ref} must be a numeric Excel date/time, not a text/ISO date')
-                check_date_cell(ref,float(raw),date_only)
+                if cell.get('t') not in {None,'n'}: raise ValueError(f'{ref} must be a numeric Excel date, not a text/ISO date')
+                check_date_cell(ref,float(raw),True)
+    sales_column=column_letter(headers.index('近一月销量')+1)
+    for ref,cell in cells.items():
+        if fill_color(cell)=='FCE4D6' and re.match(r'[A-Z]+',ref).group()!=sales_column:
+            raise ValueError(f'FCE4D6 fill is only allowed on 近一月销量, found {ref}')
+    def require_format(ref,expected):
+        cell=cells.get(ref)
+        if cell is None: return
+        raw=cell.findtext(Q(MAIN,'v'))
+        if raw is None or raw=='': return
+        if format_code(cell)!=expected: raise ValueError(f'Wrong number format at {ref}: {format_code(cell)!r}')
+    integer_columns=[column_letter(headers.index(name)+1) for name in schema['integer_columns']]
+    money_columns=[column_letter(headers.index(name)+1) for name in schema['price_columns']]
+    size_column=column_letter(headers.index('包装尺寸(cm)')+1)
+    for row in asins:
+        for column in integer_columns: require_format(f'{column}{row}','#,##0')
+        for column in money_columns: require_format(f'{column}{row}','$#,##0.00')
+        size_cell=cells.get(f'{size_column}{row}')
+        if size_cell is not None and cell_text(size_cell,shared) not in (None,''):
+            if size_cell.get('t') not in {'s','inlineStr','str'}: raise ValueError(f'包装尺寸 must stay text at {size_column}{row}')
     verified_image_bytes=0
     if image_cells:
         rv=ET.fromstring(files['xl/richData/rdrichvalue.xml']); md=ET.fromstring(files['xl/metadata.xml']); rr=ET.fromstring(files['xl/richData/richValueRel.xml'])
@@ -254,7 +332,14 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
         for row,record in enumerate(records,2):
             if asins.get(row)!=record['ASIN']: raise ValueError(f'ASIN mismatch at D{row}')
             if cells[f'D{row}'].get('t') not in {'s','inlineStr','str'}: raise ValueError('ASIN must remain text')
-            dates=expected_date_values(record); check_date_cell(f'L{row}',dates['上架时间'],True); check_date_cell(f'X{row}',dates['卖家精灵数据更新时间'])
+            dates=expected_date_values(record)
+            check_date_cell(f'{column_letter(headers.index("上架时间")+1)}{row}',dates['上架时间'],True)
+            check_date_cell(f'{column_letter(headers.index("卖家精灵数据更新时间")+1)}{row}',dates['卖家精灵数据更新时间'],True)
+            if record.get('库存状态')=='无购买框':
+                price_ref=f'{column_letter(headers.index("价格")+1)}{row}'
+                price_cell=cells.get(price_ref)
+                price_text=cell_text(price_cell,shared) if price_cell is not None else None
+                if price_text not in (None,''): raise ValueError(f'无购买框 row must have an empty price at {price_ref}')
             for field in ['标题','公司主体','公司地址']:
                 original=record.get(field)
                 if original is not None and isinstance(original,str):
@@ -263,8 +348,10 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
                     if actual!=expected: raise ValueError(f'Text changed/truncated at {field}, row {row}')
             for field in highlighted_fields(record,headers):
                 if fill_color(cells[f'{column_letter(headers.index(field)+1)}{row}'])!='FFF2CC': raise ValueError(f'Missing third-party yellow marker: {field}, row {row}')
-            if record.get('_sales_estimated') and fill_color(cells[f'K{row}'])!='FCE4D6': raise ValueError('Estimated sales orange marker missing')
-            if record.get('卖家主页') and linkmap.get(f'AF{row}')!=record['卖家主页']: raise ValueError('Seller hyperlink mismatch')
+            sales_ref=f'{sales_column}{row}'
+            if record.get('_sales_estimated') and fill_color(cells[sales_ref])!='FCE4D6': raise ValueError('Estimated sales orange marker missing')
+            seller_ref=f'{column_letter(headers.index("卖家主页")+1)}{row}'
+            if record.get('卖家主页') and linkmap.get(seller_ref)!=record['卖家主页']: raise ValueError('Seller hyperlink mismatch')
         expected_links=expected_count*(2 if require_asin_text_links else 1)+sum(bool(r.get('卖家主页')) for r in records)
         if len(hyperlinks)!=expected_links: raise ValueError('Cell hyperlink count mismatch')
         variant_sheet=ET.fromstring(files[sheet_part(files,'变体明细')])
@@ -277,12 +364,12 @@ def validate_workbook(path,data=None,schema=None,require_click_layer=True,requir
             for index,field in enumerate(variant_headers,1):
                 ref=f'{column_letter(index)}{row}'
                 if field in date_fields: check_date_cell(ref,excel_date_serial(record.get(field)),True,variant_cells)
-                elif field in datetime_fields: check_date_cell(ref,excel_datetime_serial(record.get(field)),False,variant_cells)
+                elif field in datetime_fields: check_date_cell(ref,excel_beijing_date_serial(record.get(field)),True,variant_cells)
                 elif isinstance(record.get(field),str):
                     expected=record[field]
                     if re.match(r'^[=+@]',expected): expected="'"+expected
                     if cell_text(variant_cells.get(ref),shared)!=expected: raise ValueError(f'Variant text changed/truncated at {ref}')
-    return {'passed':True,'columns':32,'image_cells':len(image_cells),'click_overlays':len(overlays),'hyperlinks':len(hyperlinks),'source_image_bytes_verified':verified_image_bytes,'xml_parts':sum(n.endswith(('.xml','.rels')) for n in files),'native_application_visual_check':False,'native_sort_filter_check':False}
+    return {'passed':True,'columns':33,'image_cells':len(image_cells),'click_overlays':len(overlays),'hyperlinks':len(hyperlinks),'source_image_bytes_verified':verified_image_bytes,'xml_parts':sum(n.endswith(('.xml','.rels')) for n in files),'native_application_visual_check':False,'native_sort_filter_check':False}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__); parser.add_argument('workbook',type=Path); parser.add_argument('--input',type=Path)

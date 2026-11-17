@@ -206,7 +206,6 @@ def extract_results(tree, page, source):
         if heading:
             record["标题"] = heading.text()
         record["价格"] = extract_price(node)
-        record["原价/参考价"] = extract_price(node, True)
         icon = node.klass("a-icon-alt")
         if icon and re.search(r"out of 5|5 stars", icon.text(), re.I):
             record["评分"] = number(icon.text(), True)
@@ -252,7 +251,6 @@ def detail_fields(tree, source):
     price_root = tree.ident("corePriceDisplay_desktop_feature_div") or tree.ident("corePrice_feature_div")
     if price_root:
         fields["价格"] = extract_price(price_root)
-        fields["原价/参考价"] = extract_price(price_root, True)
     availability = tree.ident("availability")
     if availability:
         text = availability.text()
@@ -371,6 +369,8 @@ def collect(args):
                 seen.add(record["ASIN"])
                 record["自然排名"] = len(result["records"]) + 1
                 record["_sources"]["自然排名"] = url
+                for field in ("FBA配送费", "包装尺寸(cm)", "包装重量(g)"):
+                    record.setdefault(field, None)
                 result["records"].append(record)
             if reached_end:
                 break
@@ -426,7 +426,7 @@ def collect(args):
     result["enrichment_complete"] = False
     if any("_sales_display" in record for record in result["records"]):
         result["notes"].append("近一月销量中的Amazon bought in past month为页面购买量展示；带+的数值仅为下限，原始文本保留在各商品_sales_display中，不能视为精确销量。")
-    result["notes"].append("本助手没有调用卖家精灵，点数使用为0；品牌/上架时间/父ASIN/销量估算、公司主体地址须按Skill继续补证据。")
+    result["notes"].append("本助手没有调用卖家精灵或Sorftime，点数使用为0。品牌、上架时间、父ASIN、销量估算、公司主体地址，以及FBA配送费、包装尺寸和包装重量，须按Skill继续补证据；后三项只来自按确切ASIN合并的product_detail，未取得保持null。")
     output = work / "competitors.json"
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(output), "status": result["status"], "search_coverage_complete": result["search_coverage_complete"], "products": len(result["records"]), "images": len(result["records"]) - len(image_failures)}, ensure_ascii=False))

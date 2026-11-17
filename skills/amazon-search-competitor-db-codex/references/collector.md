@@ -6,7 +6,7 @@
 python3 scripts/collect_amazon.py --keyword 'napkin rings' --work-dir /绝对路径/work/napkin-rings --pages 3
 ```
 
-输出 `competitors.json`、`images/` 主图和 `evidence/` HTML。JSON 可继续由 agent 补充卖家精灵、变体、卖家主体证据，再传给工作簿生成器。`status: search_complete` 只表示本次搜索页采集结束；`search_coverage_complete` 标记搜索覆盖，`details_complete` 和 `images_complete` 分别说明详情、主图覆盖。`enrichment_complete` 默认 `false`，不得据此宣称32列已全部补齐。抓取受阻返回退出码2，但仍保存已取得的记录、覆盖状态与原因。
+输出 `competitors.json`、`images/` 主图和 `evidence/` HTML。JSON 可继续由 agent 补充卖家精灵、变体、卖家主体证据，再传给工作簿生成器。`status: search_complete` 只表示本次搜索页采集结束；`search_coverage_complete` 标记搜索覆盖，`details_complete` 和 `images_complete` 分别说明详情、主图覆盖。`enrichment_complete` 默认 `false`，不得据此宣称33列已全部补齐。FBA配送费、包装尺寸和包装重量不在本采集范围内。抓取受阻返回退出码2，但仍保存已取得的记录、覆盖状态与原因。
 
 默认只抓搜索页；加 `--details` 按ASIN顺序请求详情，`--max-details N` 限制数量（默认200）。详情遇验证码、重定向、HTTP错误或ASIN不一致即停止后续详情补充，已有搜索页数据保留。缺失字段留空，不把推荐商品的值冒充目标商品。
 

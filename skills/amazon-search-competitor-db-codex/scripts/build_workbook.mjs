@@ -14,24 +14,28 @@ const detail = wb.worksheets.add('竞品明细');
 const variants = wb.worksheets.add('变体明细');
 const notes = wb.worksheets.add('说明');
 const col = n => { let out=''; for (;n;n=Math.floor((n-1)/26)) out=String.fromCharCode(65+(n-1)%26)+out; return out; };
+const colOf = name => col(headers.indexOf(name)+1);
+const last = col(headers.length);
 const literal = v => typeof v === 'string' && /^[=+@]/.test(v) ? `'${v}` : v;
 const integerColumns = new Set(schema.integer_columns);
-const numericColumns = new Set([...schema.integer_columns, ...schema.price_columns, '评分', '折扣']);
-const dateFormat='yyyy年mm月dd日';
-const datetimeFormat='yyyy-mm-dd hh:mm';
+const numericColumns = new Set([...schema.integer_columns, ...schema.price_columns, '评分']);
+const dateFormat='yyyy-mm-dd';
 const visualLength = value => Array.from(String(value??'')).reduce((n,ch)=>n+(ch.codePointAt(0)>0x2ff?2:1),0);
 const lineHeight = (value,width) => String(value??'').split('\n').reduce((sum,line)=>sum+Math.max(1,Math.ceil(visualLength(line)/width)),0)*13+10;
-const values = rows.map((record,i) => headers.map(header => {
+const values = rows.map((record) => headers.map(header => {
   if (header === '主图') return record._image ? record.ASIN : null;
   if (header === '上架时间' || header === '卖家精灵数据更新时间') return record._excel_date_values?.[header] ?? null;
+  if (header === '价格' && record['库存状态'] === '无购买框') return null;
   const value=record[header] ?? null;
   if (numericColumns.has(header) && value!==null && (typeof value!=='number' || !Number.isFinite(value))) throw new Error(`${record.ASIN}: ${header} must be a number or null`);
   if (integerColumns.has(header) && value!==null && (!Number.isInteger(value)||value<0)) throw new Error(`${record.ASIN}: ${header} must be a nonnegative integer`);
   return literal(value);
 }));
-detail.getRange('A1:AF1').values=[headers];
-if (values.length) detail.getRange(`A2:AF${values.length+1}`).values=values;
-const used=detail.getRange(`A1:AF${Math.max(1,rows.length+1)}`);
+const endRow=Math.max(1,rows.length+1);
+const dataEnd=Math.max(2,rows.length+1);
+detail.getRange(`A1:${last}1`).values=[headers];
+if (values.length) detail.getRange(`A2:${last}${values.length+1}`).values=values;
+const used=detail.getRange(`A1:${last}${endRow}`);
 used.format.font={name:'Arial',size:10,color:'#202938'};
 used.format.verticalAlignment='center';
 used.format.columnWidth=16;
@@ -39,41 +43,42 @@ used.format.rowHeight=76;
 used.format.wrapText=true;
 detail.showGridLines=false;
 detail.tabColor='#203A58';
-const headerRange=detail.getRange('A1:AF1');
-headerRange.format={fill:'#203A58',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'},rowHeight:38,wrapText:true,horizontalAlignment:'center',verticalAlignment:'center'};
-detail.getRange(`A2:C${Math.max(2,rows.length+1)}`).format.columnWidth=9;
-detail.getRange(`D1:D${Math.max(1,rows.length+1)}`).format.columnWidth=15;
-detail.getRange(`E1:E${Math.max(1,rows.length+1)}`).format.columnWidth=18;
-detail.getRange(`L1:L${Math.max(1,rows.length+1)}`).format.columnWidth=19;
-detail.getRange(`X1:X${Math.max(1,rows.length+1)}`).format.columnWidth=24;
-detail.getRange(`F1:F${Math.max(1,rows.length+1)}`).format.columnWidth=54;
-detail.getRange(`F2:G${Math.max(2,rows.length+1)}`).format.wrapText=true;
-detail.getRange(`AA1:AB${Math.max(1,rows.length+1)}`).format.columnWidth=36;
-detail.getRange(`AA2:AB${Math.max(2,rows.length+1)}`).format.wrapText=true;
-detail.getRange(`AF1:AF${Math.max(1,rows.length+1)}`).format.columnWidth=30;
-detail.getRange(`AF2:AF${Math.max(2,rows.length+1)}`).format.wrapText=true;
+const headerRange=detail.getRange(`A1:${last}1`);
+headerRange.format={fill:'#203A58',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'},wrapText:true,horizontalAlignment:'center',verticalAlignment:'center'};
+headerRange.format.rowHeight=40;
+const widthOf=(name,width)=>detail.getRange(`${colOf(name)}1:${colOf(name)}${endRow}`).format.columnWidth=width;
+detail.getRange(`A2:C${dataEnd}`).format.columnWidth=9;
+detail.getRange(`D1:D${endRow}`).format.columnWidth=15;
+detail.getRange(`E1:E${endRow}`).format.columnWidth=18;
+detail.getRange(`F1:F${endRow}`).format.columnWidth=54;
+widthOf('上架时间',12.71);
+widthOf('卖家精灵数据更新时间',12.71);
+widthOf('包装尺寸(cm)',18);
+widthOf('公司地址',36);
+widthOf('公司主体',36);
+widthOf('卖家主页',30);
+detail.getRange(`F2:G${dataEnd}`).format.wrapText=true;
+detail.getRange(`${colOf('公司地址')}2:${colOf('公司地址')}${dataEnd}`).format.wrapText=true;
+detail.getRange(`${colOf('公司主体')}2:${colOf('公司主体')}${dataEnd}`).format.wrapText=true;
+detail.getRange(`${colOf('卖家主页')}2:${colOf('卖家主页')}${dataEnd}`).format.wrapText=true;
 for (let i=0;i<headers.length;i++) {
-  const h=headers[i], end=Math.max(2,rows.length+1), r=detail.getRange(`${col(i+1)}2:${col(i+1)}${end}`);
-  if(integerColumns.has(h)) r.setNumberFormat('0');
+  const h=headers[i], r=detail.getRange(`${col(i+1)}2:${col(i+1)}${dataEnd}`);
+  if(integerColumns.has(h)) r.setNumberFormat('#,##0');
   if(schema.price_columns.includes(h)) r.setNumberFormat('$#,##0.00');
   if(h==='评分') r.setNumberFormat('0.0');
-  if(h==='折扣') r.setNumberFormat('0%');
-  if(h==='上架时间') r.setNumberFormat(dateFormat);
-  if(h==='卖家精灵数据更新时间') r.setNumberFormat(datetimeFormat);
+  if(h==='上架时间'||h==='卖家精灵数据更新时间') r.setNumberFormat(dateFormat);
   if(['ASIN','父ASIN','卖家ID'].includes(h)) r.setNumberFormat('@');
   if(numericColumns.has(h)) r.format.horizontalAlignment='right';
 }
 for(let i=0;i<rows.length;i++) {
   const row=i+2, r=rows[i];
-  if(typeof r['价格']==='number'&&typeof r['原价/参考价']==='number'&&r['原价/参考价']>r['价格']) detail.getRange(`J${row}`).formulas=[[`=1-H${row}/I${row}`]];
-  else detail.getRange(`J${row}`).values=[[null]];
   for(const field of r._highlight_fields_resolved??[]) {
     const index=headers.indexOf(field);
     if(index>=0) detail.getRange(`${col(index+1)}${row}`).format.fill='#FFF2CC';
   }
-  if(r._sales_estimated) detail.getRange(`K${row}`).format.fill='#FCE4D6';
+  if(r._sales_estimated) detail.getRange(`${colOf('近一月销量')}${row}`).format.fill='#FCE4D6';
   const longest=Math.max(76,...[['标题',54],['品牌',16],['公司主体',36],['公司地址',36]].map(([field,width])=>lineHeight(r[field],width)));
-  detail.getRange(`A${row}:AF${row}`).format.rowHeight=Math.min(409.5,longest);
+  detail.getRange(`A${row}:${last}${row}`).format.rowHeight=Math.min(409.5,longest);
 }
 detail.freezePanes.freezeRows(1);
 detail.freezePanes.freezeColumns(5);
@@ -83,15 +88,19 @@ const variantHeaders=[...new Set(['父ASIN','ASIN',...variantRows.flatMap(r=>Obj
 variants.getRangeByIndexes(0,0,1,variantHeaders.length).values=[variantHeaders];
 if(variantRows.length) variants.getRangeByIndexes(1,0,variantRows.length,variantHeaders.length).values=variantRows.map(r=>variantHeaders.map(k=>Object.hasOwn(r._excel_date_values??{},k)?r._excel_date_values[k]:literal(r[k]??null)));
 const vr=variants.getRangeByIndexes(0,0,Math.max(1,variantRows.length+1),variantHeaders.length);
-vr.format={font:{name:'Arial',size:10},verticalAlignment:'center',columnWidth:24,rowHeight:24,wrapText:true};
-variants.getRangeByIndexes(0,0,1,variantHeaders.length).format={fill:'#203A58',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'},horizontalAlignment:'center',rowHeight:30};
+vr.format={font:{name:'Arial',size:10},verticalAlignment:'center',wrapText:true};
+vr.format.columnWidth=24;
+vr.format.rowHeight=24;
+const variantHeader=variants.getRangeByIndexes(0,0,1,variantHeaders.length);
+variantHeader.format={fill:'#203A58',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'},horizontalAlignment:'center'};
+variantHeader.format.rowHeight=30;
 variants.showGridLines=false;
 variants.freezePanes.freezeRows(1);
 for(let i=0;i<variantRows.length;i++) {
   const record=variantRows[i],row=i+2;
   for(let j=0;j<variantHeaders.length;j++) {
     const header=variantHeaders[j];
-    if(Object.hasOwn(record._excel_date_values??{},header)) variants.getRange(`${col(j+1)}${row}`).setNumberFormat((data.variant_datetime_fields??['卖家精灵数据更新时间']).includes(header)?datetimeFormat:dateFormat);
+    if(Object.hasOwn(record._excel_date_values??{},header)) variants.getRange(`${col(j+1)}${row}`).setNumberFormat(dateFormat);
     if(['ASIN','父ASIN'].includes(header)) variants.getRange(`${col(j+1)}${row}`).setNumberFormat('@');
   }
   variants.getRangeByIndexes(row-1,0,1,variantHeaders.length).format.rowHeight=Math.min(409.5,Math.max(24,...variantHeaders.map(h=>lineHeight(record[h],24))));
@@ -102,11 +111,17 @@ const notesRows=[
  ['项目','内容',''],['搜索词',data.keyword??'',''],['站点',data.marketplace??'US',''],['抓取时间',`${beijing}（北京时间）`,''],
  ['配送邮编',data.delivery_postcode??'未核实',''],['商品数量',rows.length,''],
  ['广告剔除规则','只统计已确认的自然搜索卡片；剔除 Sponsored、广告组件；按 ASIN 去重。实际覆盖缺口见下方说明。',''],
- ['近一月销量口径','页面 bought in past month 的数字可能是下限，原文保存在来源说明；第三方估算填浅橙底。',''],
- ['上架时间口径','历史最早记录只作近似，不等同于真实上架时间；近似项逐条注明。',''],
+ ['列结构','竞品明细固定33列，A到AG，以卖家主页结束。',''],
+ ['近一月销量口径','页面 bought in past month 的数字可能是下限，原文保存在来源说明；第三方估算只把近一月销量涂成浅橙。包装重量和其他列不使用浅橙。',''],
+ ['上架时间口径','Excel日期，只显示 yyyy-mm-dd，列宽12。历史最早记录只作近似，不等同于真实上架时间；近似项逐条注明。',''],
+ ['卖家精灵数据更新时间','只取真实源更新时间，换算成北京时间后只保留日期，写成 yyyy-mm-dd，不含时间，列宽12。不用本次查询时间代填。',''],
+ ['价格口径','美元，格式 $#,##0.00。库存状态为「无购买框」时价格留空。',''],
+ ['FBA配送费','来自 Sorftime product_detail 的 fba_fee，美元，原样取值，格式 $#,##0.00。按确切ASIN合并。缺失或无效留空，不估算。',''],
+ ['包装尺寸(cm)','来自 Sorftime product_detail 的包装尺寸，单位厘米，文本为「长 × 宽 × 高」。按确切ASIN合并。缺失留空，不换算、不猜测。',''],
+ ['包装重量(g)','来自 Sorftime product_detail 的包装重量，单位克，整数，格式 #,##0。按确切ASIN合并。缺失或无效留空，不换算、不猜测。',''],
  ['卖家精灵点数',data.points_used??'未核实',''],
- ['来源颜色','浅黄表示第三方公司资料；浅橙表示估算销量。来源和核实状态逐字段列示。',''],
- ['更新时间口径','只取真实源更新时间，按北京时间显示至分钟；数值保留原时间精度，不用本次查询时间代填。',''],
+ ['Sorftime点数',data.sorftime_points_used??'未核实',''],
+ ['来源颜色','浅黄表示第三方公司资料；浅橙只表示估算的近一月销量。来源和核实状态逐字段列示。',''],
 ];
 const appendLong=(asin,label,value)=>{
   const text=typeof value==='string'?value:JSON.stringify(value);
@@ -132,13 +147,15 @@ for(const record of variantRows) {
   for(const [field,value] of Object.entries(record)) if(!field.startsWith('_')&&typeof value==='string'&&Array.from(value).length>120) appendLong(record.ASIN??record['父ASIN']??'变体',`变体${field}完整内容`,value);
   for(const [field,source] of Object.entries(record._sources??{})) appendLong(record.ASIN??'变体',`变体${field}来源`,source);
 }
-notes.getRange(`A1:C${notesRows.length}`).values=notesRows.map(r=>r.map(literal));
-notes.getRange(`A1:C${notesRows.length}`).format={font:{name:'Arial',size:10},verticalAlignment:'center',rowHeight:32,wrapText:true};
-notes.getRange(`A1:A${notesRows.length}`).format.columnWidth=20;
-notes.getRange(`B1:B${notesRows.length}`).format.columnWidth=44;
+const notesRange=notes.getRange(`A1:C${notesRows.length}`);
+notesRange.values=notesRows.map(r=>r.map(literal));
+notesRange.format={font:{name:'Arial',size:10},verticalAlignment:'center',wrapText:true};
+notesRange.format.rowHeight=32;
+notes.getRange(`A1:A${notesRows.length}`).format.columnWidth=22;
+notes.getRange(`B1:B${notesRows.length}`).format.columnWidth=28;
 notes.getRange(`C1:C${notesRows.length}`).format.columnWidth=90;
 notes.getRange('A1:C1').format={fill:'#203A58',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'}};
-for(let i=1;i<notesRows.length;i++) notes.getRange(`A${i+1}:C${i+1}`).format.rowHeight=Math.min(409.5,Math.max(32,lineHeight(notesRows[i][0],20),lineHeight(notesRows[i][1],44),lineHeight(notesRows[i][2],90)));
+for(let i=1;i<notesRows.length;i++) notes.getRange(`A${i+1}:C${i+1}`).format.rowHeight=Math.min(409.5,Math.max(32,lineHeight(notesRows[i][0],22),lineHeight(notesRows[i][1],28),lineHeight(notesRows[i][2],90)));
 notes.showGridLines=false;
 wb.recalculate();
 const inspected=await wb.inspect({kind:'table',range:`竞品明细!A1:M${Math.min(4,rows.length+1)}`,include:'values,formulas',tableMaxRows:4,tableMaxCols:13,maxChars:2500});
@@ -147,13 +164,6 @@ await fs.mkdir(path.dirname(outputPath),{recursive:true});
 await (await SpreadsheetFile.exportXlsx(wb)).save(outputPath);
 if(previewDir) {
   await fs.mkdir(previewDir,{recursive:true});
-  // The PNG renderer does not recognize Chinese date literals. This preview-only
-  // format change happens after export; the saved XLSX keeps yyyy年mm月dd日.
-  if(rows.length) detail.getRange(`L2:L${rows.length+1}`).setNumberFormat('yyyy-mm-dd');
-  if(variantRows.length) for(const field of data.variant_date_fields??['上架时间']) {
-    const index=variantHeaders.indexOf(field);
-    if(index>=0) variants.getRange(`${col(index+1)}2:${col(index+1)}${variantRows.length+1}`).setNumberFormat('yyyy-mm-dd');
-  }
   // Preview-only drawings let the renderer show thumbnails; base/final XLSX contain no such drawings.
   for(let i=0;i<Math.min(rows.length,4);i++) if(rows[i]._image) {
     const bytes=await fs.readFile(rows[i]._image);
@@ -161,7 +171,7 @@ if(previewDir) {
     detail.getRange(`E${i+2}`).values=[[null]];
     detail.images.add({dataUrl:`data:${mime};base64,${bytes.toString('base64')}`,anchor:{from:{row:i+1,col:4,rowOffsetPx:3,colOffsetPx:3},extent:{widthPx:104,heightPx:92}}});
   }
-  for(const [sheetName,range,name] of [['竞品明细',`A1:M${Math.min(5,rows.length+1)}`,'竞品明细'],['竞品明细',`N1:AF${Math.min(5,rows.length+1)}`,'竞品明细右侧'],['变体明细',`A1:${col(Math.min(variantHeaders.length,6))}${Math.min(5,variantRows.length+1)}`,'变体明细'],['说明',`A1:C${Math.min(13,notesRows.length)}`,'说明']]) {
+  for(const [sheetName,range,name] of [['竞品明细',`A1:M${Math.min(5,rows.length+1)}`,'竞品明细'],['竞品明细',`N1:${last}${Math.min(5,rows.length+1)}`,'竞品明细右侧'],['变体明细',`A1:${col(Math.min(variantHeaders.length,6))}${Math.min(5,variantRows.length+1)}`,'变体明细'],['说明',`A1:C${Math.min(18,notesRows.length)}`,'说明']]) {
     const blob=await wb.render({sheetName,range,scale:1,format:'png'});
     await fs.writeFile(path.join(previewDir,`${name}.png`),new Uint8Array(await blob.arrayBuffer()));
   }

@@ -8,44 +8,46 @@
     "标题",
     "品牌",
     "价格",
-    "原价/参考价",
-    "折扣",
     "近一月销量",
+    "变体数量",
     "上架时间",
+    "FBA配送费",
+    "包装尺寸(cm)",
+    "包装重量(g)",
     "评分",
     "评论数",
     "大类BSR排名",
     "大类",
     "小类BSR排名",
     "小类名称",
-    "变体数量",
     "父ASIN",
     "库存状态",
     "卖家",
     "配送方式",
+    "主体所在国家/地区",
+    "公司地址",
     "卖家精灵数据更新时间",
     "卖家ID",
     "店铺名称",
     "公司主体",
-    "公司地址",
-    "主体所在国家/地区",
     "卖家ASIN数量",
     "卖家最佳自然排名",
     "卖家主页"
   ],
   "price_columns": [
     "价格",
-    "原价/参考价"
+    "FBA配送费"
   ],
   "integer_columns": [
     "自然排名",
     "页码",
     "页内位置",
     "近一月销量",
+    "变体数量",
     "评论数",
     "大类BSR排名",
     "小类BSR排名",
-    "变体数量",
+    "包装重量(g)",
     "卖家ASIN数量",
     "卖家最佳自然排名"
   ],
@@ -54,10 +56,11 @@
     "marketplace": "US",
     "captured_at": "带时区的 ISO 8601 抓取时间",
     "delivery_postcode": "已核实的页面配送邮编；未核实则留空",
-    "records": "对象列表，键采用headers原始列名。缺失用null；_image为本地PNG/JPEG（相对JSON目录或绝对路径）；_sources逐字段记录来源；_sales_display和_sales_lower_bound保留页面购买量原文及下限，_sales_estimated仅用于粒度匹配的估算；_sellersprite_updated_at_ms为真实updatedTime UTC毫秒；_field_provenance记录公司等资料来源性质；_listing_date_approx为近似日标识。",
+    "records": "对象列表，键采用headers原始列名。缺失用null；_image为本地PNG/JPEG（相对JSON目录或绝对路径）；_sources逐字段记录来源；_sales_display和_sales_lower_bound保留页面购买量原文及下限，_sales_estimated仅用于粒度匹配的估算；_sellersprite_updated_at_ms为真实updatedTime UTC毫秒；_field_provenance记录公司等资料来源性质；_listing_date_approx为近似日标识。FBA配送费、包装尺寸(cm)、包装重量(g)只来自按确切ASIN合并的Sorftime product_detail，缺失为null。",
     "variants": "变体对象列表，表头使用中文，至少包含父ASIN和ASIN",
-    "notes": "说明文字列表，含覆盖缺口、买过人数下限/估算、日期近似和不可核实值",
-    "points_used": "实际已知的卖家精灵点数；未知为 null，不猜测"
+    "notes": "说明文字列表，含覆盖缺口、买过人数下限/估算、日期近似和不可核实值。不写商标或折扣。",
+    "points_used": "实际已知的卖家精灵点数；未知为 null，不猜测",
+    "sorftime_points_used": "实际已知的Sorftime点数；未知为 null，不猜测"
   },
   "record_optional_fields": {
     "_sellersprite_updated_at_ms": "真实商品updatedTime UTC毫秒整数，不能由查询时刻合成",
@@ -68,11 +71,22 @@
         "verified_on_amazon": false
       }
     },
-    "_highlight_fields": "兼容既有逐字段颜色对象；优先用来源性质决定第三方浅黄，估算销量浅橙",
+    "_highlight_fields": "兼容既有逐字段颜色对象；优先用来源性质决定第三方浅黄，估算销量浅橙且只涂近一月销量",
     "_listing_date_approx": "使用近似上架日时true，并明确局限"
   },
   "date_storage": {
-    "L": "Excel整数日期，yyyy年mm月dd日",
-    "X": "真实更新时间转北京墙上时间后写Excel数字日期时间；ISO输入必须带时区，兼容旧北京yyyy-mm-dd HH:MM"
+    "K": "上架时间。Excel整数日期，格式 yyyy-mm-dd，不含时间，列宽12",
+    "AA": "卖家精灵数据更新时间。真实更新时间转到北京时间后只保留日期，写Excel整数日期，格式 yyyy-mm-dd，不含时间，列宽12。ISO输入必须带时区"
+  },
+  "sorftime_product_detail": {
+    "tool": "product_detail",
+    "join": "exact ASIN",
+    "points_per_asin": 1,
+    "cache": "任务工作目录中的 sorftime_cache.json，键为ASIN；已有记录不重复请求",
+    "fields": {
+      "FBA配送费": "fba_fee，美元，原样取值；空或负数写null",
+      "包装尺寸(cm)": "包装尺寸，单位厘米，文本为长 × 宽 × 高；缺失写null",
+      "包装重量(g)": "包装重量，单位克，非负数值取整数部分；空或负数写null"
+    }
   }
 }
